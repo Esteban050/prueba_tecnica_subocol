@@ -1,0 +1,900 @@
+<div class="app-container">
+  <!-- 1. Encabezado Superior -->
+  <header class="top-header">
+    <div class="brand-section">
+      <div class="brand-logo">🛠️</div>
+      <div class="brand-info">
+        <h1>SUBOCOL TALLER</h1>
+        <p>Sistema de Gestión de Órdenes, Agenda y Notificaciones WhatsApp</p>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <!-- Selector de Operario Activo (RF-27: X-User-Id en cada petición) -->
+      <div class="user-selector-container" title="Cada petición HTTP viaja con este identificador en el encabezado X-User-Id">
+        <span class="user-selector-label">Operario Activo:</span>
+        <select class="user-select" [ngModel]="state.activeUserId()" (ngModelChange)="state.setOperario($event)">
+          <option *ngFor="let op of state.operariosDisponibles" [value]="op.id">
+            {{ op.id }} - {{ op.nombre }} ({{ op.cargo }})
+          </option>
+        </select>
+      </div>
+
+      <!-- Estado de Microservicios -->
+      <div class="service-pills">
+        <div class="service-pill" title="Microservicio Órdenes en :8081 (Postgres + RabbitMQ)">
+          <span class="dot-indicator"></span> Órdenes :8081
+        </div>
+        <div class="service-pill" title="Microservicio Agenda en :8082 (Cupos Atómicos)">
+          <span class="dot-indicator"></span> Agenda :8082
+        </div>
+        <div class="service-pill" title="Microservicio Notificaciones en :8083 (Simulador WhatsApp)">
+          <span class="dot-indicator"></span> Notificaciones :8083
+        </div>
+      </div>
+
+      <button class="btn btn-outline btn-sm" (click)="cargarTodo()" title="Refrescar todos los datos">
+        🔄 Actualizar
+      </button>
+    </div>
+  </header>
+
+  <!-- 2. Ribbon de Flujo Interactivo (Guía de Negocio) -->
+  <nav class="flow-ribbon">
+    <button class="flow-tab" [class.active]="state.activeTab() === 'pipeline'" (click)="state.activeTab.set('pipeline')">
+      <span class="flow-step-num">1</span>
+      <span>📋 Pipeline de Órdenes</span>
+      <span class="badge badge-recibida">{{ ordenes().length }}</span>
+    </button>
+
+    <button class="flow-tab" [class.active]="state.activeTab() === 'clientes'" (click)="state.activeTab.set('clientes')">
+      <span class="flow-step-num">2</span>
+      <span>👥 Clientes & Vehículos</span>
+      <span class="badge badge-origen-op">{{ clientes().length }}</span>
+    </button>
+
+    <button class="flow-tab" [class.active]="state.activeTab() === 'agenda'" (click)="state.activeTab.set('agenda')">
+      <span class="flow-step-num">3</span>
+      <span>⏱️ Agenda & Cupos Atómicos</span>
+      <span class="badge badge-diagnostico">{{ citas().length }}</span>
+    </button>
+
+    <button class="flow-tab" [class.active]="state.activeTab() === 'whatsapp'" (click)="state.activeTab.set('whatsapp')">
+      <span class="flow-step-num">4</span>
+      <span>📱 Simulador WhatsApp en Vivo</span>
+      <span class="badge badge-reparada">{{ notificaciones().length }}</span>
+    </button>
+
+    <button class="flow-tab" [class.active]="state.activeTab() === 'arquitectura'" (click)="state.activeTab.set('arquitectura')">
+      <span class="flow-step-num">5</span>
+      <span>🏛️ Arquitectura & Microservicios</span>
+    </button>
+  </nav>
+
+  <!-- 3. Contenido Principal Dinámico -->
+  <main class="main-content">
+
+    <!-- ======================================================== -->
+    <!-- TAB 1: PIPELINE DE ÓRDENES (KANBAN & MÁQUINA DE ESTADOS) -->
+    <!-- ======================================================== -->
+    <div *ngIf="state.activeTab() === 'pipeline'" class="tab-pane">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+        <div>
+          <h2 style="font-size: 1.3rem; font-weight: 800; color: var(--slate-900);">Tablero de Órdenes de Servicio</h2>
+          <p style="font-size: 0.85rem; color: var(--slate-500);">
+            Máquina de estados estricta: <code>RECIBIDA ➔ EN_DIAGNOSTICO ➔ EN_REPARACION ➔ REPARADA ➔ CERRADA</code>.
+            Reapertura solo desde <code>CERRADA</code> con razón obligatoria (RF-07).
+          </p>
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-primary" (click)="modalOrdenAbierto.set(true)">
+            ➕ Crear Orden de Servicio
+          </button>
+        </div>
+      </div>
+
+      <!-- Cuadrícula Kanban de Estados -->
+      <div class="kanban-grid">
+        <!-- Columna 1: RECIBIDA -->
+        <div class="kanban-col">
+          <div class="kanban-col-header">
+            <span class="col-title">📥 RECIBIDA</span>
+            <span class="col-count">{{ ordenesPorEstado('RECIBIDA').length }}</span>
+          </div>
+
+          <div *ngFor="let ord of ordenesPorEstado('RECIBIDA')" class="order-card">
+            <div class="order-header">
+              <span class="order-id">#{{ ord.id }}</span>
+              <span class="badge badge-recibida">RECIBIDA</span>
+            </div>
+            <div class="order-body">
+              <div class="client-info">
+                <span class="client-name">{{ ord.clienteNombre }}</span>
+                <span style="display: block; font-size: 0.75rem; color: var(--slate-500);">📱 {{ ord.clienteTelefono }}</span>
+              </div>
+              <div class="vehicle-info">
+                <span class="plate-badge">{{ ord.vehiculoPlaca }}</span>
+                <span style="font-weight: 600;">{{ ord.vehiculoModelo }}</span>
+              </div>
+              <div class="work-desc">
+                <strong>Trabajo:</strong> {{ ord.trabajoSolicitado }}
+              </div>
+              <div style="font-size: 0.72rem; color: var(--slate-500);">
+                <span>Origen: </span>
+                <span class="badge" [class.badge-origen-op]="ord.origen === 'OPERARIO'" [class.badge-origen-aseg]="ord.origen === 'ASEGURADORA'">
+                  {{ ord.origen }}
+                </span>
+                <span *ngIf="ord.aseguradora"> ({{ ord.aseguradora }})</span>
+              </div>
+            </div>
+            <div class="order-footer">
+              <button class="btn btn-warning btn-sm" (click)="avanzarEstado(ord, 'EN_DIAGNOSTICO')">
+                🔍 Iniciar Diagnóstico ➔
+              </button>
+              <div style="display: flex; gap: 0.3rem;">
+                <button class="btn btn-outline btn-sm" style="flex: 1;" (click)="prepararCitaParaOrden(ord)">
+                  ⏱️ Cita
+                </button>
+                <button class="btn btn-ghost btn-sm" style="flex: 1;" (click)="verAuditoria(ord)">
+                  🔒 Auditoría
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Columna 2: EN_DIAGNOSTICO -->
+        <div class="kanban-col">
+          <div class="kanban-col-header">
+            <span class="col-title">🔍 EN DIAGNÓSTICO</span>
+            <span class="col-count">{{ ordenesPorEstado('EN_DIAGNOSTICO').length }}</span>
+          </div>
+
+          <div *ngFor="let ord of ordenesPorEstado('EN_DIAGNOSTICO')" class="order-card">
+            <div class="order-header">
+              <span class="order-id">#{{ ord.id }}</span>
+              <span class="badge badge-diagnostico">EN DIAGNÓSTICO</span>
+            </div>
+            <div class="order-body">
+              <div class="client-info">
+                <span class="client-name">{{ ord.clienteNombre }}</span>
+                <span style="display: block; font-size: 0.75rem; color: var(--slate-500);">📱 {{ ord.clienteTelefono }}</span>
+              </div>
+              <div class="vehicle-info">
+                <span class="plate-badge">{{ ord.vehiculoPlaca }}</span>
+                <span style="font-weight: 600;">{{ ord.vehiculoModelo }}</span>
+              </div>
+              <div class="work-desc">
+                <strong>Trabajo:</strong> {{ ord.trabajoSolicitado }}
+              </div>
+            </div>
+            <div class="order-footer">
+              <button class="btn btn-primary btn-sm" (click)="avanzarEstado(ord, 'EN_REPARACION')">
+                🔧 Pasar a Reparación ➔
+              </button>
+              <div style="display: flex; gap: 0.3rem;">
+                <button class="btn btn-outline btn-sm" style="flex: 1;" (click)="prepararCitaParaOrden(ord)">
+                  ⏱️ Cita
+                </button>
+                <button class="btn btn-ghost btn-sm" style="flex: 1;" (click)="verAuditoria(ord)">
+                  🔒 Auditoría
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Columna 3: EN_REPARACION -->
+        <div class="kanban-col">
+          <div class="kanban-col-header">
+            <span class="col-title">🔧 EN REPARACIÓN</span>
+            <span class="col-count">{{ ordenesPorEstado('EN_REPARACION').length }}</span>
+          </div>
+
+          <div *ngFor="let ord of ordenesPorEstado('EN_REPARACION')" class="order-card">
+            <div class="order-header">
+              <span class="order-id">#{{ ord.id }}</span>
+              <span class="badge badge-reparacion">EN REPARACIÓN</span>
+            </div>
+            <div class="order-body">
+              <div class="client-info">
+                <span class="client-name">{{ ord.clienteNombre }}</span>
+                <span style="display: block; font-size: 0.75rem; color: var(--slate-500);">📱 {{ ord.clienteTelefono }}</span>
+              </div>
+              <div class="vehicle-info">
+                <span class="plate-badge">{{ ord.vehiculoPlaca }}</span>
+                <span style="font-weight: 600;">{{ ord.vehiculoModelo }}</span>
+              </div>
+              <div class="work-desc">
+                <strong>Trabajo:</strong> {{ ord.trabajoSolicitado }}
+              </div>
+            </div>
+            <div class="order-footer">
+              <button class="btn btn-success btn-sm" (click)="avanzarEstado(ord, 'REPARADA')">
+                ✅ Marcar Reparada ➔
+              </button>
+              <div style="display: flex; gap: 0.3rem;">
+                <button class="btn btn-outline btn-sm" style="flex: 1;" (click)="prepararCitaParaOrden(ord)">
+                  ⏱️ Cita
+                </button>
+                <button class="btn btn-ghost btn-sm" style="flex: 1;" (click)="verAuditoria(ord)">
+                  🔒 Auditoría
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Columna 4: REPARADA -->
+        <div class="kanban-col">
+          <div class="kanban-col-header">
+            <span class="col-title">✅ REPARADA</span>
+            <span class="col-count">{{ ordenesPorEstado('REPARADA').length }}</span>
+          </div>
+
+          <div *ngFor="let ord of ordenesPorEstado('REPARADA')" class="order-card">
+            <div class="order-header">
+              <span class="order-id">#{{ ord.id }}</span>
+              <span class="badge badge-reparada">REPARADA</span>
+            </div>
+            <div class="order-body">
+              <div class="client-info">
+                <span class="client-name">{{ ord.clienteNombre }}</span>
+                <span style="display: block; font-size: 0.75rem; color: var(--slate-500);">📱 {{ ord.clienteTelefono }}</span>
+              </div>
+              <div class="vehicle-info">
+                <span class="plate-badge">{{ ord.vehiculoPlaca }}</span>
+                <span style="font-weight: 600;">{{ ord.vehiculoModelo }}</span>
+              </div>
+              <div class="work-desc">
+                <strong>Trabajo:</strong> {{ ord.trabajoSolicitado }}
+              </div>
+            </div>
+            <div class="order-footer">
+              <button class="btn btn-danger btn-sm" (click)="avanzarEstado(ord, 'CERRADA')" title="Cierra la orden y cancela citas pendientes sin avisar al cliente">
+                🏁 Cerrar Orden (RF-06/18) ➔
+              </button>
+              <div style="display: flex; gap: 0.3rem;">
+                <button class="btn btn-outline btn-sm" style="flex: 1;" (click)="prepararCitaParaOrden(ord)">
+                  ⏱️ Cita
+                </button>
+                <button class="btn btn-ghost btn-sm" style="flex: 1;" (click)="verAuditoria(ord)">
+                  🔒 Auditoría
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Columna 5: CERRADA -->
+        <div class="kanban-col">
+          <div class="kanban-col-header">
+            <span class="col-title">🏁 CERRADA</span>
+            <span class="col-count">{{ ordenesPorEstado('CERRADA').length }}</span>
+          </div>
+
+          <div *ngFor="let ord of ordenesPorEstado('CERRADA')" class="order-card" style="opacity: 0.9;">
+            <div class="order-header">
+              <span class="order-id">#{{ ord.id }}</span>
+              <span class="badge badge-cerrada">CERRADA</span>
+            </div>
+            <div class="order-body">
+              <div class="client-info">
+                <span class="client-name">{{ ord.clienteNombre }}</span>
+                <span style="display: block; font-size: 0.75rem; color: var(--slate-500);">📱 {{ ord.clienteTelefono }}</span>
+              </div>
+              <div class="vehicle-info">
+                <span class="plate-badge">{{ ord.vehiculoPlaca }}</span>
+                <span style="font-weight: 600;">{{ ord.vehiculoModelo }}</span>
+              </div>
+              <div class="work-desc" style="border-left-color: var(--slate-400);">
+                <strong>Trabajo:</strong> {{ ord.trabajoSolicitado }}
+              </div>
+            </div>
+            <div class="order-footer">
+              <button class="btn btn-warning btn-sm" (click)="abrirModalReapertura(ord)" title="Reabrir con razón obligatoria (RF-07)">
+                🔓 Reabrir con Razón (RF-07)
+              </button>
+              <button class="btn btn-ghost btn-sm" (click)="verAuditoria(ord)">
+                🔒 Historial de Auditoría
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- TAB 2: CLIENTES & VEHÍCULOS (RF-01, RF-02)              -->
+    <!-- ======================================================== -->
+    <div *ngIf="state.activeTab() === 'clientes'" class="tab-pane">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <div>
+          <h2 style="font-size: 1.3rem; font-weight: 800; color: var(--slate-900);">Gestión de Clientes y Vehículos</h2>
+          <p style="font-size: 0.85rem; color: var(--slate-500);">
+            El servicio de Órdenes es dueño de clientes y vehículos. El teléfono es obligatorio para los avisos por WhatsApp.
+          </p>
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-outline" (click)="modalClienteAbierto.set(true)">
+            ➕ Registrar Cliente
+          </button>
+          <button class="btn btn-primary" (click)="modalVehiculoAbierto.set(true)">
+            ➕ Registrar Vehículo
+          </button>
+        </div>
+      </div>
+
+      <!-- Tarjetas de Clientes y sus Vehículos -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 1.25rem;">
+        <div *ngFor="let c of clientes()" style="background: #fff; border-radius: var(--radius-md); border: 1px solid var(--slate-200); padding: 1.25rem; box-shadow: var(--shadow-sm);">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
+            <div>
+              <h3 style="font-size: 1rem; font-weight: 700; color: var(--slate-900);">{{ c.nombre }}</h3>
+              <span style="font-size: 0.75rem; color: var(--slate-500);">C.C. / NIT: {{ c.documento }}</span>
+            </div>
+            <span class="badge badge-origen-op">Cliente #{{ c.id }}</span>
+          </div>
+
+          <div style="background: var(--slate-50); padding: 0.6rem 0.8rem; border-radius: var(--radius-sm); font-size: 0.8rem; margin-bottom: 1rem;">
+            <div><strong>📱 Teléfono WhatsApp:</strong> <span style="font-family: var(--font-mono); font-weight: 700; color: var(--success);">{{ c.telefono }}</span></div>
+            <div *ngIf="c.email"><strong>✉️ Email:</strong> {{ c.email }}</div>
+            <div *ngIf="c.direccion"><strong>📍 Dirección:</strong> {{ c.direccion }}</div>
+          </div>
+
+          <!-- Vehículos de este cliente -->
+          <div style="border-top: 1px solid var(--slate-200); padding-top: 0.75rem;">
+            <h4 style="font-size: 0.8rem; font-weight: 700; color: var(--slate-600); margin-bottom: 0.5rem; text-transform: uppercase;">
+              Vehículos Asociados
+            </h4>
+            <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+              <ng-container *ngFor="let v of vehiculos()">
+                <div *ngIf="v.clienteId === c.id" style="display: flex; justify-content: space-between; align-items: center; background: #fff; border: 1px solid var(--slate-200); padding: 0.4rem 0.6rem; border-radius: var(--radius-sm);">
+                  <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <span class="plate-badge">{{ v.placa }}</span>
+                    <span style="font-size: 0.8rem; font-weight: 600;">{{ v.marca }} {{ v.modelo }} ({{ v.anio }})</span>
+                  </div>
+                  <button class="btn btn-outline btn-sm" (click)="formOrden.clienteId = c.id!; formOrden.vehiculoId = v.id!; modalOrdenAbierto.set(true)">
+                    ➕ Crear Orden
+                  </button>
+                </div>
+              </ng-container>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- TAB 3: AGENDA & CUPOS ATÓMICOS (RF-13, RF-14, RF-15, RF-16) -->
+    <!-- ======================================================== -->
+    <div *ngIf="state.activeTab() === 'agenda'" class="tab-pane">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <div>
+          <h2 style="font-size: 1.3rem; font-weight: 800; color: var(--slate-900);">Agenda y Control de Cupos Atómicos</h2>
+          <p style="font-size: 0.85rem; color: var(--slate-500);">
+            El servicio de Agenda es dueño de operarios, franjas y citas. Controla la concurrencia con operaciones atómicas en BD (RF-15).
+          </p>
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-primary" (click)="modalCitaAbierto.set(true)">
+            ➕ Agendar Nueva Cita
+          </button>
+        </div>
+      </div>
+
+      <!-- Cuadrícula de Franjas Horarias con Medidor de Cupo -->
+      <div style="margin-bottom: 2rem;">
+        <h3 style="font-size: 1rem; font-weight: 700; color: var(--slate-800); margin-bottom: 0.75rem;">
+          Franjas Horarias y Disponibilidad de Cupo
+        </h3>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem;">
+          <div *ngFor="let f of franjas()" style="background: #fff; border: 1px solid var(--slate-200); border-radius: var(--radius-md); padding: 1rem; box-shadow: var(--shadow-sm);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+              <span style="font-size: 0.85rem; font-weight: 700; color: var(--slate-900);">{{ f.operarioNombre }}</span>
+              <span class="badge" [class.badge-reparada]="!f.llena" [class.badge-recibida]="f.ocupados > 0 && !f.llena" [class.badge-cerrada]="f.llena" style="color: f.llena ? '#dc2626' : ''">
+                {{ f.llena ? '🔴 AGOTADA (LLENA)' : '🟢 ' + f.disponibles + ' DISPONIBLE(S)' }}
+              </span>
+            </div>
+
+            <div style="font-size: 0.8rem; color: var(--slate-600); margin-bottom: 0.75rem;">
+              <span>🕒 {{ f.inicio | date:'dd/MM/yyyy HH:mm' }} ➔ {{ f.fin | date:'HH:mm' }}</span>
+            </div>
+
+            <!-- Barra de Cupos -->
+            <div style="background: var(--slate-200); height: 8px; border-radius: 9999px; overflow: hidden; margin-bottom: 0.5rem;">
+              <div [style.width.%]="(f.ocupados / f.cupoMaximo) * 100"
+                   [style.background]="f.llena ? '#ef4444' : f.ocupados > 0 ? '#f59e0b' : '#10b981'"
+                   style="height: 100%; transition: width 0.3s ease;">
+              </div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--slate-500); margin-bottom: 0.75rem;">
+              <span>Ocupados: <strong>{{ f.ocupados }}</strong></span>
+              <span>Cupo Máximo: <strong>{{ f.cupoMaximo }}</strong></span>
+            </div>
+
+            <button class="btn btn-outline btn-sm" style="width: 100%;" [disabled]="f.llena"
+                    (click)="formCita.operarioId = f.operarioId; formCita.franjaCupoId = f.id; modalCitaAbierto.set(true)">
+              {{ f.llena ? '🔒 Franja Llena (Rechazo Atómico)' : '➕ Agendar en esta Franja' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tabla de Citas Agendadas -->
+      <div>
+        <h3 style="font-size: 1rem; font-weight: 700; color: var(--slate-800); margin-bottom: 0.75rem;">
+          Historial y Citas Activas
+        </h3>
+
+        <div style="background: #fff; border-radius: var(--radius-md); border: 1px solid var(--slate-200); overflow: hidden; box-shadow: var(--shadow-sm);">
+          <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; text-align: left;">
+            <thead style="background: var(--slate-50); border-bottom: 1px solid var(--slate-200); color: var(--slate-600);">
+              <tr>
+                <th style="padding: 0.75rem 1rem;">ID Cita</th>
+                <th style="padding: 0.75rem 1rem;">Orden</th>
+                <th style="padding: 0.75rem 1rem;">Operario</th>
+                <th style="padding: 0.75rem 1rem;">Franja Horaria</th>
+                <th style="padding: 0.75rem 1rem;">Tipo</th>
+                <th style="padding: 0.75rem 1rem;">Estado</th>
+                <th style="padding: 0.75rem 1rem;">Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let c of citas()" style="border-bottom: 1px solid var(--slate-100);">
+                <td style="padding: 0.75rem 1rem; font-weight: 700;">#{{ c.id }}</td>
+                <td style="padding: 0.75rem 1rem;">
+                  <span class="badge badge-origen-op">Orden #{{ c.ordenId }}</span>
+                </td>
+                <td style="padding: 0.75rem 1rem;">{{ c.operarioNombre }}</td>
+                <td style="padding: 0.75rem 1rem; font-family: var(--font-mono); font-size: 0.75rem;">{{ c.franjaHorario }}</td>
+                <td style="padding: 0.75rem 1rem;">
+                  <span class="badge" [class.badge-diagnostico]="c.tipo === 'ENTREGA'" [class.badge-reparacion]="c.tipo === 'RECOGIDA'">
+                    {{ c.tipo }}
+                  </span>
+                </td>
+                <td style="padding: 0.75rem 1rem;">
+                  <span class="badge" [class.badge-reparada]="c.estado === 'AGENDADA'" [class.badge-cerrada]="c.estado === 'CANCELADA'">
+                    {{ c.estado }}
+                  </span>
+                  <div *ngIf="c.motivoCancelacion" style="font-size: 0.7rem; color: #dc2626; margin-top: 0.2rem;">
+                    Motivo: {{ c.motivoCancelacion }}
+                  </div>
+                </td>
+                <td style="padding: 0.75rem 1rem;">
+                  <button *ngIf="c.estado === 'AGENDADA'" class="btn btn-outline btn-sm" (click)="abrirCancelarCita(c)">
+                    ❌ Cancelar
+                  </button>
+                  <span *ngIf="c.estado === 'CANCELADA'" style="font-size: 0.75rem; color: var(--slate-400);">Cupo Liberado</span>
+                </td>
+              </tr>
+              <tr *ngIf="citas().length === 0">
+                <td colspan="7" style="padding: 2rem; text-align: center; color: var(--slate-400);">
+                  No hay citas registradas aún.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- TAB 4: SIMULADOR DE WHATSAPP EN VIVO (RF-22, RF-23, RF-24) -->
+    <!-- ======================================================== -->
+    <div *ngIf="state.activeTab() === 'whatsapp'" class="tab-pane">
+      <div style="display: flex; gap: 2rem; align-items: flex-start; flex-wrap: wrap;">
+        <!-- Mockup Smartphone de WhatsApp -->
+        <div class="whatsapp-mockup">
+          <div class="phone-notch">
+            <div class="phone-speaker"></div>
+          </div>
+
+          <div class="wa-header">
+            <div class="wa-avatar">🚗</div>
+            <div>
+              <div class="wa-name">Taller Automotriz Subocol</div>
+              <div class="wa-status">Canal Oficial WhatsApp Business</div>
+            </div>
+          </div>
+
+          <div class="wa-chat-area">
+            <div *ngFor="let notif of notificaciones()" class="wa-message" [class.outgoing]="notif.enviada" [style.background]="!notif.enviada ? '#fee2e2' : ''">
+              <div *ngIf="!notif.enviada" style="font-size: 0.7rem; font-weight: 700; color: #b91c1c; margin-bottom: 0.2rem;">
+                🚫 OMITIDO POR POLÍTICA RF-24:
+              </div>
+              <div>{{ notif.contenido }}</div>
+              <div *ngIf="notif.razonOmision" style="font-size: 0.68rem; color: #991b1b; margin-top: 0.2rem; font-style: italic;">
+                Razón: {{ notif.razonOmision }}
+              </div>
+              <div class="wa-meta">
+                <span>{{ notif.fechaRegistro | date:'HH:mm' }}</span>
+                <span *ngIf="notif.enviada">✓✓</span>
+                <span *ngIf="!notif.enviada">🚫</span>
+              </div>
+            </div>
+
+            <div *ngIf="notificaciones().length === 0" style="text-align: center; color: var(--slate-500); margin-top: 3rem; font-size: 0.8rem;">
+              No se han emitido eventos de citas aún.<br>
+              ¡Agende una cita para ver el mensaje aquí!
+            </div>
+          </div>
+        </div>
+
+        <!-- Panel de Explicación de Políticas de Envío -->
+        <div style="flex: 1; min-width: 320px; display: flex; flex-direction: column; gap: 1rem;">
+          <div style="background: #fff; border: 1px solid var(--slate-200); border-radius: var(--radius-md); padding: 1.25rem; box-shadow: var(--shadow-sm);">
+            <h3 style="font-size: 1.1rem; font-weight: 800; color: var(--slate-900); margin-bottom: 0.5rem;">
+              Reglas de Negocio de Notificaciones
+            </h3>
+            <p style="font-size: 0.85rem; color: var(--slate-600); margin-bottom: 1rem;">
+              El servicio de <strong>Notificaciones</strong> opera de forma 100% asíncrona consumiendo eventos de RabbitMQ. Si cae, las órdenes y citas siguen operando (RF-28).
+            </p>
+
+            <div style="display: flex; flex-direction: column; gap: 0.75rem; font-size: 0.85rem;">
+              <div style="background: var(--success-light); border-left: 4px solid var(--success); padding: 0.75rem; border-radius: var(--radius-sm);">
+                <strong>✅ RF-22 (Cita Agendada):</strong><br>
+                Al agendar una cita de entrega o recogida, se emite <code>CitaAgendada</code> y el sistema envía el WhatsApp al teléfono del cliente registrado en la orden.
+              </div>
+
+              <div style="background: var(--warning-light); border-left: 4px solid var(--warning); padding: 0.75rem; border-radius: var(--radius-sm);">
+                <strong>✅ RF-23 (Cancelación normal):</strong><br>
+                Si la cita se cancela por solicitud del cliente o del taller, se emite <code>CitaCancelada</code> con motivo y el cliente recibe su aviso por WhatsApp.
+              </div>
+
+              <div style="background: var(--danger-light); border-left: 4px solid var(--danger); padding: 0.75rem; border-radius: var(--radius-sm);">
+                <strong>🚫 RF-24 (Cierre de orden - Omisión por política):</strong><br>
+                Cuando una orden se cierra, sus citas pendientes se cancelan con motivo <code>CIERRE_ORDEN</code>. En este caso <strong>NO</strong> se envía WhatsApp, porque el cliente ya recogió su vehículo a satisfacción.
+              </div>
+
+              <div style="background: var(--purple-light); border-left: 4px solid var(--purple); padding: 0.75rem; border-radius: var(--radius-sm);">
+                <strong>🛡️ RF-26 (Idempotencia garantizada):</strong><br>
+                Cada evento viaja con un <code>eventId</code> único (UUID). Procesar dos veces el mismo mensaje no duplica envíos en WhatsApp ni registros.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- TAB 5: ARQUITECTURA & MICROSERVICIOS                    -->
+    <!-- ======================================================== -->
+    <div *ngIf="state.activeTab() === 'arquitectura'" class="tab-pane">
+      <div style="background: #fff; border-radius: var(--radius-md); border: 1px solid var(--slate-200); padding: 1.5rem; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 1.5rem;">
+        <div>
+          <h2 style="font-size: 1.3rem; font-weight: 800; color: var(--slate-900);">Arquitectura de Microservicios Implementada</h2>
+          <p style="font-size: 0.85rem; color: var(--slate-500);">
+            Diseño guiado por eventos, separación estricta de bases de datos y principios de propiedad de datos.
+          </p>
+        </div>
+
+        <div style="background: var(--slate-900); color: #e2e8f0; padding: 1.25rem; border-radius: var(--radius-md); font-family: var(--font-mono); font-size: 0.85rem; overflow-x: auto;">
+<pre>
+   Angular (Frontend :4200)
+       │              │
+    REST             REST
+       ▼              ▼
+ Órdenes (:8081)    Agenda (:8082)
+ (PostgreSQL)       (PostgreSQL)
+       │                  │
+    publica            publica
+       ▼                  ▼
+    ┌───────────────────────────────┐
+    │  RabbitMQ (taller.exchange)   │
+    └───────────────────────────────┘
+       │                  │
+   consume             consume
+       ▼                  ▼
+ Agenda (:8082)     Notificaciones (:8083)
+ (EstadoOrden)      (Log WhatsApp Business)
+</pre>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+          <div style="background: var(--slate-50); border: 1px solid var(--slate-200); padding: 1rem; border-radius: var(--radius-sm);">
+            <h3 style="font-size: 0.95rem; font-weight: 700; color: var(--slate-800); margin-bottom: 0.4rem;">1. Servicio Órdenes (:8081)</h3>
+            <p style="font-size: 0.8rem; color: var(--slate-600);">
+              Dueño de clientes, vehículos, órdenes, transiciones de estado y tabla de auditoría inmutable protegida por trigger PL/pgSQL (RF-10).
+            </p>
+          </div>
+          <div style="background: var(--slate-50); border: 1px solid var(--slate-200); padding: 1rem; border-radius: var(--radius-sm);">
+            <h3 style="font-size: 0.95rem; font-weight: 700; color: var(--slate-800); margin-bottom: 0.4rem;">2. Servicio Agenda (:8082)</h3>
+            <p style="font-size: 0.8rem; color: var(--slate-600);">
+              Dueño de operarios, franjas horarias y citas. Aplica atomicidad en base de datos para no superar cupos concurrentes (RF-15).
+            </p>
+          </div>
+          <div style="background: var(--slate-50); border: 1px solid var(--slate-200); padding: 1rem; border-radius: var(--radius-sm);">
+            <h3 style="font-size: 0.95rem; font-weight: 700; color: var(--slate-800); margin-bottom: 0.4rem;">3. Servicio Notificaciones (:8083)</h3>
+            <p style="font-size: 0.8rem; color: var(--slate-600);">
+              Dueño de plantillas, políticas y registro de mensajes. Aislado de fallos: si cae, no bloquea órdenes ni citas (RF-28).
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ======================================================== -->
+  <!-- MODALES DE ACCIÓN RÁPIDA                                 -->
+  <!-- ======================================================== -->
+
+  <!-- Modal Crear Cliente -->
+  <div *ngIf="modalClienteAbierto()" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Registrar Nuevo Cliente (RF-01)</h3>
+        <button class="btn btn-ghost btn-sm" (click)="modalClienteAbierto.set(false)">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Nombre Completo *</label>
+          <input class="form-input" type="text" [(ngModel)]="formCliente.nombre" placeholder="Ej. Juan Pérez">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cédula o NIT *</label>
+          <input class="form-input" type="text" [(ngModel)]="formCliente.documento" placeholder="Ej. 1020304050">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Teléfono Móvil (WhatsApp) *</label>
+          <input class="form-input" type="text" [(ngModel)]="formCliente.telefono" placeholder="Ej. 3115551234">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Correo Electrónico</label>
+          <input class="form-input" type="email" [(ngModel)]="formCliente.email" placeholder="cliente@correo.com">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Dirección</label>
+          <input class="form-input" type="text" [(ngModel)]="formCliente.direccion" placeholder="Calle 100 #15-20">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" (click)="modalClienteAbierto.set(false)">Cancelar</button>
+        <button class="btn btn-primary" (click)="guardarCliente()">Guardar Cliente</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Crear Vehículo -->
+  <div *ngIf="modalVehiculoAbierto()" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Registrar Vehículo (RF-02)</h3>
+        <button class="btn btn-ghost btn-sm" (click)="modalVehiculoAbierto.set(false)">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Cliente Propietario *</label>
+          <select class="form-select" [(ngModel)]="formVehiculo.clienteId">
+            <option value="0" disabled>Seleccione un cliente...</option>
+            <option *ngFor="let c of clientes()" [value]="c.id">{{ c.nombre }} ({{ c.documento }})</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Placa del Vehículo *</label>
+          <input class="form-input" type="text" [(ngModel)]="formVehiculo.placa" placeholder="Ej. ABC123" style="text-transform: uppercase;">
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group">
+            <label class="form-label">Marca *</label>
+            <input class="form-input" type="text" [(ngModel)]="formVehiculo.marca" placeholder="Ej. Mazda">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Modelo *</label>
+            <input class="form-input" type="text" [(ngModel)]="formVehiculo.modelo" placeholder="Ej. CX-30">
+          </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group">
+            <label class="form-label">Año</label>
+            <input class="form-input" type="number" [(ngModel)]="formVehiculo.anio" placeholder="2023">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Color</label>
+            <input class="form-input" type="text" [(ngModel)]="formVehiculo.color" placeholder="Rojo">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" (click)="modalVehiculoAbierto.set(false)">Cancelar</button>
+        <button class="btn btn-primary" (click)="guardarVehiculo()">Guardar Vehículo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Crear Orden -->
+  <div *ngIf="modalOrdenAbierto()" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Crear Orden de Servicio (RF-03/04)</h3>
+        <button class="btn btn-ghost btn-sm" (click)="modalOrdenAbierto.set(false)">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Cliente *</label>
+          <select class="form-select" [(ngModel)]="formOrden.clienteId">
+            <option value="0" disabled>Seleccione cliente...</option>
+            <option *ngFor="let c of clientes()" [value]="c.id">{{ c.nombre }} ({{ c.documento }})</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Vehículo *</label>
+          <select class="form-select" [(ngModel)]="formOrden.vehiculoId">
+            <option value="0" disabled>Seleccione vehículo...</option>
+            <option *ngFor="let v of vehiculos()" [value]="v.id">
+              {{ v.placa }} - {{ v.marca }} {{ v.modelo }}
+            </option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Trabajo a Realizar *</label>
+          <textarea class="form-textarea" rows="3" [(ngModel)]="formOrden.trabajoSolicitado" placeholder="Descripción detallada de la revisión o reparación..."></textarea>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group">
+            <label class="form-label">Origen de la Orden</label>
+            <select class="form-select" [(ngModel)]="formOrden.origen">
+              <option value="OPERARIO">OPERARIO (Taller)</option>
+              <option value="ASEGURADORA">ASEGURADORA (Integración)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Aseguradora (si aplica)</label>
+            <input class="form-input" type="text" [(ngModel)]="formOrden.aseguradora" placeholder="Ej. Seguros Bolívar">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" (click)="modalOrdenAbierto.set(false)">Cancelar</button>
+        <button class="btn btn-primary" (click)="guardarOrden()">Crear Orden</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Reapertura con Razón Obligatoria (RF-07) -->
+  <div *ngIf="modalReaperturaAbierto()" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Reapertura de Orden #{{ ordenSeleccionada()?.id }} (RF-07)</h3>
+        <button class="btn btn-ghost btn-sm" (click)="modalReaperturaAbierto.set(false)">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="background: var(--warning-light); border-left: 4px solid var(--warning); padding: 0.75rem; border-radius: var(--radius-sm); font-size: 0.85rem;">
+          <strong>Regla de Negocio:</strong> Una orden en estado <code>CERRADA</code> solo puede reabrirse pasando a <code>EN_REPARACION</code>, y la <strong>razón es obligatoria</strong> para auditoría inmutable.
+        </div>
+        <div class="form-group">
+          <label class="form-label">Razón de Reapertura *</label>
+          <textarea class="form-textarea" rows="4" [(ngModel)]="formReapertura.razon" placeholder="Indique el motivo técnico o administrativo de la reapertura (ej. Reclamo de garantía por fuga residual)..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" (click)="modalReaperturaAbierto.set(false)">Cancelar</button>
+        <button class="btn btn-warning" (click)="confirmarReapertura()">Confirmar Reapertura</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Auditoría Inmutable (RF-09, RF-10, RF-11) -->
+  <div *ngIf="modalAuditoriaAbierto()" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Auditoría Inmutable - Orden #{{ ordenSeleccionada()?.id }}</h3>
+        <button class="btn btn-ghost btn-sm" (click)="modalAuditoriaAbierto.set(false)">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="display: flex; align-items: center; gap: 0.5rem; background: var(--slate-100); padding: 0.6rem 0.8rem; border-radius: var(--radius-sm); font-size: 0.8rem; color: var(--slate-700);">
+          <span>🔒</span>
+          <span><strong>Registro inmutable:</strong> Protegido por trigger en PostgreSQL. No puede modificarse ni borrarse (RF-10).</span>
+        </div>
+
+        <div class="timeline">
+          <div *ngFor="let audit of auditoriaOrden()" class="timeline-item">
+            <div class="timeline-dot"></div>
+            <div class="timeline-time">{{ audit.momento | date:'dd/MM/yyyy HH:mm:ss' }}</div>
+            <div class="timeline-actor">Operario: {{ audit.operarioId }}</div>
+            <div class="timeline-box">
+              <div style="font-weight: 700; color: var(--slate-900);">
+                <span *ngIf="audit.estadoAnterior">{{ audit.estadoAnterior }} ➔ </span>
+                <span>{{ audit.estadoNuevo }}</span>
+              </div>
+              <div *ngIf="audit.razon" style="margin-top: 0.2rem; color: var(--slate-600); font-style: italic;">
+                "{{ audit.razon }}"
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" (click)="modalAuditoriaAbierto.set(false)">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Agendar Cita -->
+  <div *ngIf="modalCitaAbierto()" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Agendar Cita (RF-14/15)</h3>
+        <button class="btn btn-ghost btn-sm" (click)="modalCitaAbierto.set(false)">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Orden de Servicio *</label>
+          <select class="form-select" [(ngModel)]="formCita.ordenId">
+            <option value="0" disabled>Seleccione orden...</option>
+            <option *ngFor="let ord of ordenes()" [value]="ord.id">
+              Orden #{{ ord.id }} - {{ ord.clienteNombre }} ({{ ord.vehiculoPlaca }}) [{{ ord.estado }}]
+            </option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Operario Asignado *</label>
+          <select class="form-select" [(ngModel)]="formCita.operarioId">
+            <option value="0" disabled>Seleccione operario...</option>
+            <option *ngFor="let op of operarios()" [value]="op.id">{{ op.nombre }} ({{ op.especialidad }})</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Franja Horaria y Cupo *</label>
+          <select class="form-select" [(ngModel)]="formCita.franjaCupoId">
+            <option value="0" disabled>Seleccione franja...</option>
+            <option *ngFor="let f of franjas()" [value]="f.id" [disabled]="f.llena">
+              {{ f.operarioNombre }} | {{ f.inicio | date:'dd/MM HH:mm' }} ➔ {{ f.fin | date:'HH:mm' }} (Cupo: {{ f.ocupados }}/{{ f.cupoMaximo }}) {{ f.llena ? '[LLENA]' : '' }}
+            </option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Tipo de Cita</label>
+          <select class="form-select" [(ngModel)]="formCita.tipo">
+            <option value="ENTREGA">ENTREGA (Recepción de vehículo en taller)</option>
+            <option value="RECOGIDA">RECOGIDA (Retiro del vehículo por el cliente)</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" (click)="modalCitaAbierto.set(false)">Cancelar</button>
+        <button class="btn btn-primary" (click)="guardarCita()">Confirmar Cita</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Cancelar Cita -->
+  <div *ngIf="modalCancelarCitaAbierto()" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Cancelar Cita #{{ citaSeleccionada()?.id }} (RF-16)</h3>
+        <button class="btn btn-ghost btn-sm" (click)="modalCancelarCitaAbierto.set(false)">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Motivo de Cancelación *</label>
+          <select class="form-select" [(ngModel)]="formCancelarCita.motivo">
+            <option value="CANCELADA_POR_CLIENTE">Cancelada por el Cliente (Avisa por WhatsApp)</option>
+            <option value="REPROGRAMACION_TALLER">Reprogramación del Taller (Avisa por WhatsApp)</option>
+            <option value="CIERRE_ORDEN">Cierre de Orden (NO avisa por WhatsApp - RF-24)</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" (click)="modalCancelarCitaAbierto.set(false)">Volver</button>
+        <button class="btn btn-danger" (click)="confirmarCancelarCita()">Confirmar Cancelación</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Contenedor de Toasts de Notificación -->
+  <div class="toast-container">
+    <div *ngFor="let t of state.toasts()" class="toast" [class.toast-success]="t.tipo === 'success'" [class.toast-error]="t.tipo === 'error'" [class.toast-warning]="t.tipo === 'warning'">
+      <div>
+        <div style="font-weight: 700; font-size: 0.85rem; color: var(--slate-900);">{{ t.titulo }}</div>
+        <div style="font-size: 0.75rem; color: var(--slate-600);">{{ t.detalle }}</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" style="margin-left: auto; padding: 0.1rem 0.3rem;" (click)="state.dismissToast(t.id)">✕</button>
+    </div>
+  </div>
+</div>
