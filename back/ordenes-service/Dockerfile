@@ -1,16 +1,16 @@
 FROM maven:3.9.9-eclipse-temurin-17-alpine AS build
 WORKDIR /app
 
-# Copiar POMs y compilar dependencias
-COPY pom.xml ../pom.xml
-COPY ordenes-service/pom.xml ./pom.xml
+# Copiar POM padre y del módulo
+COPY back/pom.xml ./back/pom.xml
+COPY back/ordenes-service/pom.xml ./back/ordenes-service/pom.xml
 # Copiar código fuente
-COPY ordenes-service/src ./src
+COPY back/ordenes-service/src ./back/ordenes-service/src
 
-RUN mvn clean package -DskipTests
+RUN mvn clean package -DskipTests -f ./back/ordenes-service/pom.xml
 
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
-COPY --from=build /app/target/*.jar app.jar
+COPY --from=build /app/back/ordenes-service/target/*.jar app.jar
 EXPOSE 8081
 ENTRYPOINT ["java", "-jar", "app.jar"]

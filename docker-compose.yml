@@ -1,0 +1,145 @@
+services:
+  # ==========================================
+  # 1. Base de Datos PostgreSQL
+  # ==========================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: taller-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - taller-net
+
+  # ==========================================
+  # 2. Broker de Mensajería RabbitMQ
+  # ==========================================
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: taller-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics check_running"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    networks:
+      - taller-net
+
+  # ==========================================
+  # 3. Microservicio Órdenes (Puerto 8081)
+  # ==========================================
+  ordenes-service:
+    build:
+      context: .
+      dockerfile: back/ordenes-service/Dockerfile
+    container_name: taller-ordenes
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ordenes_db
+      SPRING_DATASOURCE_USERNAME: ordenes_user
+      SPRING_DATASOURCE_PASSWORD: ordenes_pass
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - taller-net
+
+  # ==========================================
+  # 4. Microservicio Agenda (Puerto 8082)
+  # ==========================================
+  agenda-service:
+    build:
+      context: .
+      dockerfile: back/agenda-service/Dockerfile
+    container_name: taller-agenda
+    restart: unless-stopped
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/agenda_db
+      SPRING_DATASOURCE_USERNAME: agenda_user
+      SPRING_DATASOURCE_PASSWORD: agenda_pass
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - taller-net
+
+  # ==========================================
+  # 5. Microservicio Notificaciones (Puerto 8083)
+  # ==========================================
+  notificaciones-service:
+    build:
+      context: .
+      dockerfile: back/notificaciones-service/Dockerfile
+    container_name: taller-notificaciones
+    restart: unless-stopped
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/notificaciones_db
+      SPRING_DATASOURCE_USERNAME: notificaciones_user
+      SPRING_DATASOURCE_PASSWORD: notificaciones_pass
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - taller-net
+
+  # ==========================================
+  # 6. Frontend Angular (Puerto 4200)
+  # ==========================================
+  frontend:
+    build:
+      context: ./front
+      dockerfile: Dockerfile
+    container_name: taller-front
+    restart: unless-stopped
+    ports:
+      - "4200:80"
+    depends_on:
+      - ordenes-service
+      - agenda-service
+      - notificaciones-service
+    networks:
+      - taller-net
+
+volumes:
+  postgres_data:
+
+networks:
+  taller-net:
+    driver: bridge
