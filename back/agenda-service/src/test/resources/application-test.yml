@@ -1,0 +1,23 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:agenda_test_db;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+  rabbitmq:
+    listener:
+      simple:
+        auto-startup: false
+
+app:
+  rabbitmq:
+    exchange: taller.exchange
+    queue-ordenes: agenda.ordenes.queue
+    routing-key-orden-estado: orden.estado.*
+    routing-key-orden-cerrada: orden.cerrada
+    routing-key-cita-agendada: cita.agendada
+    routing-key-cita-cancelada: cita.cancelada

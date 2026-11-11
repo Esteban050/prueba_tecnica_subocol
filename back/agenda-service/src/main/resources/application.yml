@@ -1,0 +1,29 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: agenda-service
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5433/agenda_db}
+    username: ${SPRING_DATASOURCE_USERNAME:agenda_user}
+    password: ${SPRING_DATASOURCE_PASSWORD:agenda_pass}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:localhost}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME:guest}
+    password: ${SPRING_RABBITMQ_PASSWORD:guest}
+
+app:
+  rabbitmq:
+    exchange: taller.exchange
+    queue-ordenes: agenda.ordenes.queue
+    routing-key-orden-estado: orden.estado.*
+    routing-key-orden-cerrada: orden.cerrada
+    routing-key-cita-agendada: cita.agendada
+    routing-key-cita-cancelada: cita.cancelada
